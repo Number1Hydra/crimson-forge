@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { toast } from "sonner";
-import { Play, Loader2, Zap, Gauge, Boxes, Sparkles } from "lucide-react";
+import { Play, Loader2, Zap, Gauge, Boxes, Sparkles, Puzzle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { NEWS, BUILT_IN_CLIENTS } from "./data";
 import { useLauncher } from "./store";
