@@ -2,7 +2,7 @@ const { app, BrowserWindow, ipcMain } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const crypto = require("crypto");
-const { ensureJava, getJavaExe } = require("./java-manager.cjs");
+const { execSync } = require("child_process");
 
 // minecraft-launcher-core + msmc are loaded lazily so a failure to require
 // (e.g. missing during dev) doesn't crash window creation.
@@ -12,7 +12,6 @@ const GAME_ROOT = path.join(app.getPath("userData"), "minecraft");
 const ACCOUNT_FILE = path.join(app.getPath("userData"), "account.json");
 
 let mainWindow = null;
-let javaReady = false;
 let javaPath = null;
 
 /** mclc-format authorization for the currently signed-in Microsoft account. */
@@ -52,6 +51,37 @@ function saveAccount(data) {
   }
 }
 
+function findSystemJava() {
+  try {
+    // Try to find java in PATH
+    const result = execSync("where java", { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] }).trim();
+    if (result && fs.existsSync(result)) {
+      console.log("Found system Java at:", result);
+      return result;
+    }
+  } catch (e) {
+    console.log("Java not found in PATH");
+  }
+  
+  // Try common installation paths on Windows
+  const commonPaths = [
+    "C:\\Program Files\\Java\\jdk-21\\bin\\java.exe",
+    "C:\\Program Files\\Java\\jre-21\\bin\\java.exe",
+    "C:\\Program Files (x86)\\Java\\jdk-21\\bin\\java.exe",
+    "C:\\Program Files (x86)\\Java\\jre-21\\bin\\java.exe",
+    "C:\\Program Files\\AdoptOpenJDK\\jdk-21\\bin\\java.exe",
+  ];
+  
+  for (const javaPath of commonPaths) {
+    if (fs.existsSync(javaPath)) {
+      console.log("Found system Java at:", javaPath);
+      return javaPath;
+    }
+  }
+  
+  return null;
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1180,
@@ -78,7 +108,7 @@ app.whenReady().then(() => {
 
   createWindow();
 
-  // Initialize Java runtime in background
+  // Find Java on system
   initializeJava();
 
   app.on("activate", () => {
@@ -91,15 +121,18 @@ app.on("window-all-closed", () => {
 });
 
 // Initialize Java runtime
-async function initializeJava() {
+function initializeJava() {
   try {
-    send("java:status", { status: "Initializing Java Runtime..." });
-    javaPath = await ensureJava(app.getPath("userData"), (progress) => {
-      send("java:progress", progress);
-    });
-    javaReady = true;
-    send("java:ready", { ready: true });
-    console.log("Java runtime ready at:", javaPath);
+    send("java:status", { status: "Detecting Java Runtime..." });
+    javaPath = findSystemJava();
+    
+    if (javaPath) {
+      send("java:ready", { ready: true });
+      console.log("Java runtime ready at:", javaPath);
+    } else {
+      send("java:error", { error: "Java 17+ not found. Please install Java from java.com or adoptopenjdk.net" });
+      console.error("Java not found on system");
+    }
   } catch (error) {
     console.error("Failed to initialize Java:", error);
     send("java:error", { error: error.message });
@@ -168,8 +201,8 @@ ipcMain.handle("mc:account", async () => {
 // IPC: launch Minecraft
 // ---------------------------------------------------------------------------
 ipcMain.handle("mc:launch", async (_evt, opts) => {
-  if (!javaReady) {
-    throw new Error("Java runtime not ready. Please wait for initialization.");
+  if (!javaPath) {
+    throw new Error("Java runtime not found. Please install Java 17+");
   }
 
   if (!Client) ({ Client } = require("minecraft-launcher-core"));
@@ -192,7 +225,7 @@ ipcMain.handle("mc:launch", async (_evt, opts) => {
     root: GAME_ROOT,
     version: { number: opts.version, type: "release" },
     memory: { max: `${opts.ram}G`, min: "2G" },
-    javaPath: javaPath, // Use bundled Java
+    javaPath: javaPath, // Use system Java
   };
 
   return new Promise((resolve, reject) => {
@@ -237,7 +270,7 @@ ipcMain.handle("mc:launch", async (_evt, opts) => {
 // IPC: Get Java status
 ipcMain.handle("java:status", async () => {
   return {
-    ready: javaReady,
+    ready: !!javaPath,
     path: javaPath,
   };
 });
