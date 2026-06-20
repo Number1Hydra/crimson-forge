@@ -30,3 +30,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Electron build artifacts (shipped as downloadable zips, not committed)
+electron-release/
+electron/renderer-dist/
