@@ -1,9 +1,11 @@
-import { createContext, useContext, useMemo, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { DEFAULT_MODS, type Mod } from "./data";
+import { getStoredAccount } from "@/lib/launcher-bridge";
 
 interface Account {
   username: string;
   loggedIn: boolean;
+  uuid?: string;
 }
 
 interface LauncherState {
@@ -38,6 +40,13 @@ export function LauncherProvider({ children }: { children: ReactNode }) {
   const [height, setHeight] = useState(1080);
   const [account, setAccount] = useState<Account>({ username: "Steve", loggedIn: false });
   const [mods, setMods] = useState<Mod[]>(DEFAULT_MODS);
+
+  // Restore a previously signed-in Microsoft account in the desktop app.
+  useEffect(() => {
+    getStoredAccount().then((acc) => {
+      if (acc) setAccount({ username: acc.username, loggedIn: true, uuid: acc.uuid });
+    });
+  }, []);
 
   const value = useMemo<LauncherState>(
     () => ({

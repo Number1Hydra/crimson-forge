@@ -1,8 +1,8 @@
-import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
 import { Search, Check, Loader2, Boxes, Calendar } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { getMinecraftVersions, type MinecraftVersion } from "@/lib/minecraft.functions";
+import { loadVersions } from "@/lib/launcher-bridge";
+import { type MinecraftVersion, type VersionManifest } from "@/lib/mc-types";
 import { useLauncher } from "./store";
 
 type Filter = "all" | "release" | "snapshot" | "old_beta" | "old_alpha";
@@ -26,19 +26,25 @@ export function VersionsView() {
   const { selectedVersion, setSelectedVersion } = useLauncher();
   const [filter, setFilter] = useState<Filter>("all");
   const [query, setQuery] = useState("");
+  const [manifest, setManifest] = useState<VersionManifest | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  const { data, isLoading } = useQuery({
-    queryKey: ["mc-versions"],
-    queryFn: () => getMinecraftVersions(),
-    staleTime: 1000 * 60 * 30,
-  });
+  useEffect(() => {
+    let active = true;
+    loadVersions()
+      .then((m) => active && setManifest(m))
+      .finally(() => active && setLoading(false));
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const versions = useMemo<MinecraftVersion[]>(() => {
-    let list = data?.versions ?? [];
+    let list = manifest?.versions ?? [];
     if (filter !== "all") list = list.filter((v) => v.type === filter);
     if (query.trim()) list = list.filter((v) => v.id.toLowerCase().includes(query.toLowerCase()));
     return list;
-  }, [data, filter, query]);
+  }, [manifest, filter, query]);
 
   return (
     <div className="space-y-6">
@@ -47,8 +53,8 @@ export function VersionsView() {
           Version <span className="text-gradient-crimson">library</span>
         </h1>
         <p className="mt-1 text-muted-foreground">
-          {data ? `${data.versions.length} versions` : "Loading"} — pulled live from Mojang.
-          Latest release: <span className="text-forest-glow">{data?.latest.release ?? "…"}</span>
+          {manifest ? `${manifest.versions.length} versions` : "Loading"} — pulled live from Mojang.
+          Latest release: <span className="text-forest-glow">{manifest?.latest.release ?? "…"}</span>
         </p>
       </header>
 
@@ -80,7 +86,7 @@ export function VersionsView() {
         </div>
       </div>
 
-      {isLoading ? (
+      {loading ? (
         <div className="flex items-center justify-center gap-2 py-20 text-muted-foreground">
           <Loader2 className="h-5 w-5 animate-spin" /> Fetching versions…
         </div>
