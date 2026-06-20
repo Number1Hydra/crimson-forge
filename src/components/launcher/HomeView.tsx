@@ -79,7 +79,7 @@ export function HomeView({ onNavigate }: { onNavigate: (v: "versions" | "clients
         {[
           { icon: Boxes, label: "Version", value: selectedVersion, action: () => onNavigate("versions") },
           { icon: Sparkles, label: "Client", value: client?.name ?? "—", action: () => onNavigate("clients") },
-          { icon: Puzzleish, label: "Active mods", value: String(enabledMods) },
+          { icon: Puzzle, label: "Active mods", value: String(enabledMods) },
           { icon: Gauge, label: "Boost", value: client?.fps ?? "+0%" },
         ].map((s, i) => (
           <button
