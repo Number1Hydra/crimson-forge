@@ -2,6 +2,7 @@ const { app, BrowserWindow, ipcMain } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const crypto = require("crypto");
+const { ensureJava, getJavaExe } = require("./java-manager.cjs");
 
 // minecraft-launcher-core + msmc are loaded lazily so a failure to require
 // (e.g. missing during dev) doesn't crash window creation.
@@ -11,6 +12,9 @@ const GAME_ROOT = path.join(app.getPath("userData"), "minecraft");
 const ACCOUNT_FILE = path.join(app.getPath("userData"), "account.json");
 
 let mainWindow = null;
+let javaReady = false;
+let javaPath = null;
+
 /** mclc-format authorization for the currently signed-in Microsoft account. */
 let currentAuth = null;
 
@@ -73,6 +77,10 @@ app.whenReady().then(() => {
   if (saved?.auth) currentAuth = saved.auth;
 
   createWindow();
+
+  // Initialize Java runtime in background
+  initializeJava();
+
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
@@ -81,6 +89,22 @@ app.whenReady().then(() => {
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
+
+// Initialize Java runtime
+async function initializeJava() {
+  try {
+    send("java:status", { status: "Initializing Java Runtime..." });
+    javaPath = await ensureJava(app.getPath("userData"), (progress) => {
+      send("java:progress", progress);
+    });
+    javaReady = true;
+    send("java:ready", { ready: true });
+    console.log("Java runtime ready at:", javaPath);
+  } catch (error) {
+    console.error("Failed to initialize Java:", error);
+    send("java:error", { error: error.message });
+  }
+}
 
 // ---------------------------------------------------------------------------
 // IPC: versions
@@ -144,6 +168,10 @@ ipcMain.handle("mc:account", async () => {
 // IPC: launch Minecraft
 // ---------------------------------------------------------------------------
 ipcMain.handle("mc:launch", async (_evt, opts) => {
+  if (!javaReady) {
+    throw new Error("Java runtime not ready. Please wait for initialization.");
+  }
+
   if (!Client) ({ Client } = require("minecraft-launcher-core"));
   const launcher = new Client();
 
@@ -164,6 +192,7 @@ ipcMain.handle("mc:launch", async (_evt, opts) => {
     root: GAME_ROOT,
     version: { number: opts.version, type: "release" },
     memory: { max: `${opts.ram}G`, min: "2G" },
+    javaPath: javaPath, // Use bundled Java
   };
 
   return new Promise((resolve, reject) => {
@@ -194,7 +223,7 @@ ipcMain.handle("mc:launch", async (_evt, opts) => {
     launcher.on("close", (code) => {
       send("mc:close", code);
       if (!opened) {
-        reject(new Error("Minecraft exited before launching. Is Java installed?"));
+        reject(new Error("Minecraft exited before launching. Check the game logs for details."));
       }
     });
 
@@ -203,4 +232,12 @@ ipcMain.handle("mc:launch", async (_evt, opts) => {
       if (!opened) reject(new Error(err?.message || String(err)));
     });
   });
+});
+
+// IPC: Get Java status
+ipcMain.handle("java:status", async () => {
+  return {
+    ready: javaReady,
+    path: javaPath,
+  };
 });
