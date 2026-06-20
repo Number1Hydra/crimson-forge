@@ -1,5 +1,3 @@
-import { createServerFn } from "@tanstack/react-start";
-
 export interface MinecraftVersion {
   id: string;
   type: "release" | "snapshot" | "old_beta" | "old_alpha";
@@ -12,7 +10,7 @@ export interface VersionManifest {
   versions: MinecraftVersion[];
 }
 
-const FALLBACK: VersionManifest = {
+export const FALLBACK_MANIFEST: VersionManifest = {
   latest: { release: "1.21.5", snapshot: "25w14a" },
   versions: [
     { id: "1.21.5", type: "release", releaseTime: "2025-03-25T00:00:00+00:00", url: "" },
@@ -30,20 +28,3 @@ const FALLBACK: VersionManifest = {
     { id: "a1.2.6", type: "old_alpha", releaseTime: "2010-12-02T00:00:00+00:00", url: "" },
   ],
 };
-
-export const getMinecraftVersions = createServerFn({ method: "GET" }).handler(
-  async (): Promise<VersionManifest> => {
-    try {
-      const res = await fetch(
-        "https://launchermeta.mojang.com/mc/game/version_manifest_v2.json",
-        { headers: { Accept: "application/json" } },
-      );
-      if (!res.ok) return FALLBACK;
-      const data = (await res.json()) as VersionManifest;
-      if (!data?.versions?.length) return FALLBACK;
-      return data;
-    } catch {
-      return FALLBACK;
-    }
-  },
-);

@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { toast } from "sonner";
-import { Play, Loader2, Zap, Gauge, Boxes, Sparkles, Puzzle } from "lucide-react";
+import { Play, Loader2, Zap, Gauge, Boxes, Sparkles, Puzzle, Monitor } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { NEWS, BUILT_IN_CLIENTS } from "./data";
 import { useLauncher } from "./store";
+import { isDesktop, launchMinecraft, subscribeProgress } from "@/lib/launcher-bridge";
 
 const ACCENT: Record<string, string> = {
   crimson: "from-primary/25 to-transparent border-primary/40",
@@ -11,7 +12,7 @@ const ACCENT: Record<string, string> = {
   ember: "from-ember/25 to-transparent border-ember/40",
 };
 
-const STAGES = [
+const SIM_STAGES = [
   "Authenticating session…",
   "Resolving version manifest…",
   "Downloading libraries…",
@@ -21,36 +22,67 @@ const STAGES = [
 ];
 
 export function HomeView({ onNavigate }: { onNavigate: (v: "versions" | "clients") => void }) {
-  const { selectedVersion, selectedClient, account, mods } = useLauncher();
+  const { selectedVersion, selectedClient, account, ram, mods } = useLauncher();
   const [launching, setLaunching] = useState(false);
   const [progress, setProgress] = useState(0);
   const [stage, setStage] = useState("");
 
+  const desktop = isDesktop();
   const client = BUILT_IN_CLIENTS.find((c) => c.id === selectedClient);
   const enabledMods = mods.filter((m) => m.enabled).length;
+
+  const launchReal = async () => {
+    setStage("Preparing…");
+    const unsub = subscribeProgress((p) => {
+      setProgress(p.percent);
+      setStage(p.stage);
+    });
+    try {
+      await launchMinecraft({
+        version: selectedVersion,
+        ram,
+        username: account.username,
+        offline: !account.loggedIn,
+      });
+      setProgress(100);
+      setStage("Minecraft is running");
+      toast.success("Minecraft launched!", {
+        description: `${selectedVersion} • ${client?.name} • ${enabledMods} mods active`,
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      toast.error("Launch failed", { description: msg });
+    } finally {
+      unsub();
+      setLaunching(false);
+    }
+  };
+
+  const launchSimulated = () => {
+    let i = 0;
+    setStage(SIM_STAGES[0]);
+    const interval = setInterval(() => {
+      i += 1;
+      setProgress(Math.min(100, Math.round((i / 40) * 100)));
+      setStage(SIM_STAGES[Math.min(SIM_STAGES.length - 1, Math.floor((i / 40) * SIM_STAGES.length))]);
+      if (i >= 40) {
+        clearInterval(interval);
+        setTimeout(() => {
+          setLaunching(false);
+          toast.success("Demo launch complete", {
+            description: "Real launching runs in the Crimson Craft desktop app.",
+          });
+        }, 400);
+      }
+    }, 90);
+  };
 
   const launch = () => {
     if (launching) return;
     setLaunching(true);
     setProgress(0);
-    let i = 0;
-    setStage(STAGES[0]);
-    const interval = setInterval(() => {
-      i += 1;
-      const pct = Math.min(100, Math.round((i / 40) * 100));
-      setProgress(pct);
-      const stageIdx = Math.min(STAGES.length - 1, Math.floor((i / 40) * STAGES.length));
-      setStage(STAGES[stageIdx]);
-      if (i >= 40) {
-        clearInterval(interval);
-        setTimeout(() => {
-          setLaunching(false);
-          toast.success("Minecraft launched!", {
-            description: `${selectedVersion} • ${client?.name} • ${enabledMods} mods active`,
-          });
-        }, 400);
-      }
-    }, 90);
+    if (desktop) void launchReal();
+    else launchSimulated();
   };
 
   return (
@@ -60,7 +92,8 @@ export function HomeView({ onNavigate }: { onNavigate: (v: "versions" | "clients
         <div className="animate-scan absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary to-transparent" />
         <div className="relative z-10 max-w-2xl">
           <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
-            <Zap className="h-3.5 w-3.5" /> EMBER ENGINE v2.0
+            {desktop ? <Monitor className="h-3.5 w-3.5" /> : <Zap className="h-3.5 w-3.5" />}
+            {desktop ? "DESKTOP EDITION — LIVE LAUNCH" : "EMBER ENGINE v2.0"}
           </div>
           <h1 className="font-display text-4xl font-extrabold leading-tight lg:text-6xl">
             Play <span className="text-gradient-crimson">every version</span>
@@ -144,7 +177,9 @@ export function HomeView({ onNavigate }: { onNavigate: (v: "versions" | "clients
               </div>
             ) : (
               <div>
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">Ready to play</p>
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                  {desktop ? "Ready to play" : "Demo mode — desktop app launches the real game"}
+                </p>
                 <p className="font-display text-lg font-bold">
                   {selectedVersion} <span className="text-muted-foreground">·</span>{" "}
                   <span className="text-primary">{client?.name}</span>
@@ -155,9 +190,7 @@ export function HomeView({ onNavigate }: { onNavigate: (v: "versions" | "clients
           <button
             onClick={launch}
             disabled={launching}
-            className={cn(
-              "group relative flex shrink-0 items-center justify-center gap-2.5 overflow-hidden rounded-xl bg-gradient-to-r from-primary to-[oklch(0.5_0.22_15)] px-8 py-3.5 font-display text-lg font-extrabold text-primary-foreground transition-all hover:scale-[1.02] hover:shadow-[0_0_30px_var(--crimson-glow)] disabled:opacity-70",
-            )}
+            className="group relative flex shrink-0 items-center justify-center gap-2.5 overflow-hidden rounded-xl bg-gradient-to-r from-primary to-[oklch(0.5_0.22_15)] px-8 py-3.5 font-display text-lg font-extrabold text-primary-foreground transition-all hover:scale-[1.02] hover:shadow-[0_0_30px_var(--crimson-glow)] disabled:opacity-70"
           >
             <span className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/25 to-transparent transition-transform duration-700 group-hover:translate-x-full" />
             {launching ? <Loader2 className="h-5 w-5 animate-spin" /> : <Play className="h-5 w-5 fill-current" />}

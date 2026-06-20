@@ -1,12 +1,42 @@
 import { useState } from "react";
 import { toast } from "sonner";
-import { LogIn, LogOut, ShieldCheck, Gamepad2 } from "lucide-react";
+import { LogIn, LogOut, ShieldCheck, Gamepad2, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useLauncher } from "./store";
+import { isDesktop, login as desktopLogin, logout as desktopLogout } from "@/lib/launcher-bridge";
 
 export function AccountView() {
   const { account, setAccount } = useLauncher();
   const [name, setName] = useState(account.username);
+  const [busy, setBusy] = useState(false);
+  const desktop = isDesktop();
+
+  const handleMicrosoftLogin = async () => {
+    if (!desktop) {
+      setAccount({ username: name || "Player", loggedIn: true });
+      toast.success("Signed in (demo)", {
+        description: "Real Microsoft login runs in the Crimson Craft desktop app.",
+      });
+      return;
+    }
+    setBusy(true);
+    try {
+      const acc = await desktopLogin();
+      setAccount({ username: acc.username, loggedIn: true, uuid: acc.uuid });
+      toast.success(`Signed in as ${acc.username}`);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      toast.error("Login failed", { description: msg });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleSignOut = async () => {
+    await desktopLogout();
+    setAccount({ username: name || "Steve", loggedIn: false });
+    toast("Signed out");
+  };
 
   return (
     <div className="mx-auto max-w-xl space-y-6">
@@ -14,7 +44,11 @@ export function AccountView() {
         <h1 className="font-display text-3xl font-extrabold">
           Your <span className="text-gradient-crimson">account</span>
         </h1>
-        <p className="mt-1 text-muted-foreground">Sign in with Microsoft or play offline.</p>
+        <p className="mt-1 text-muted-foreground">
+          {desktop
+            ? "Sign in with your real Microsoft / Minecraft account or play offline."
+            : "Sign in with Microsoft or play offline."}
+        </p>
       </header>
 
       <section className="animate-fade-up overflow-hidden rounded-3xl border border-border glass p-8 text-center">
@@ -35,7 +69,7 @@ export function AccountView() {
         {!account.loggedIn && (
           <div className="mt-6 text-left">
             <label className="mb-1.5 block text-xs uppercase tracking-wide text-muted-foreground">
-              Username
+              Offline username
             </label>
             <input
               value={name}
@@ -48,10 +82,7 @@ export function AccountView() {
         <div className="mt-6 flex flex-col gap-3">
           {account.loggedIn ? (
             <button
-              onClick={() => {
-                setAccount({ username: name || "Steve", loggedIn: false });
-                toast("Signed out");
-              }}
+              onClick={handleSignOut}
               className="flex items-center justify-center gap-2 rounded-xl border border-border bg-muted/50 py-3 font-bold transition-colors hover:bg-muted"
             >
               <LogOut className="h-4 w-4" /> Sign out
@@ -59,14 +90,13 @@ export function AccountView() {
           ) : (
             <>
               <button
-                onClick={() => {
-                  setAccount({ username: name || "Player", loggedIn: true });
-                  toast.success("Signed in with Microsoft");
-                }}
-                className="group relative flex items-center justify-center gap-2 overflow-hidden rounded-xl bg-gradient-to-r from-primary to-[oklch(0.5_0.22_15)] py-3 font-display font-bold text-primary-foreground transition-transform hover:scale-[1.02]"
+                onClick={handleMicrosoftLogin}
+                disabled={busy}
+                className="group relative flex items-center justify-center gap-2 overflow-hidden rounded-xl bg-gradient-to-r from-primary to-[oklch(0.5_0.22_15)] py-3 font-display font-bold text-primary-foreground transition-transform hover:scale-[1.02] disabled:opacity-70"
               >
                 <span className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/25 to-transparent transition-transform duration-700 group-hover:translate-x-full" />
-                <LogIn className="h-4 w-4" /> Sign in with Microsoft
+                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogIn className="h-4 w-4" />}
+                {busy ? "Opening Microsoft login…" : "Sign in with Microsoft"}
               </button>
               <button
                 onClick={() => {
